@@ -5,21 +5,23 @@ A Python package for testing code patches in Docker containers.
 ## Installation
 
 ```bash
-pip install -e .
+uv sync
 ```
 
 ## Usage
 
 ```bash
 docker login -u <USER> -p <PASSWORD> <REPOSITORY>
-python -m codeset_gym <instance_id> [repository]
+python -m codeset_gym <instance_id> <repository> <dataset>
 ```
 
-## Dependencies
+## Build and Publich
 
-- docker
-- junitparser
-- datasets
+```bash
+export UV_PUBLISH_TOKEN=pypi-your-token-here
+uv build
+uv publish
+```
 
 ## License
 

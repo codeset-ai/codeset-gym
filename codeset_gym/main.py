@@ -9,6 +9,8 @@ from typing import Dict, Any
 from docker.models.containers import Container
 from datasets import load_dataset
 
+from .test_collectors.factory import TestResultCollectorFactory
+
 
 client = docker.from_env()
 
@@ -17,10 +19,12 @@ def __get_repository(instance_id: str) -> str:
     return instance_id.rsplit("-", 1)[0].split("__")[1]
 
 
-def start_instance(repository: str, instance_id: str, version: str) -> Container:
+def start_instance(
+    repository: str, instance_id: str, version: str, dataset_name: str
+) -> Container:
     instance_id = instance_id.lower()
     container = client.containers.run(
-        image=f"{repository}/codeset-gym-python.{instance_id}:{version}",
+        image=f"{repository}/{dataset_name}.{instance_id}:{version}",
         command=["tail", "-f", "/dev/null"],
         detach=True,
         stdin_open=True,
@@ -29,100 +33,30 @@ def start_instance(repository: str, instance_id: str, version: str) -> Container
     return container
 
 
-def get_pytest_results(instance_id: str, container: Container) -> junitparser.JUnitXml:
-    """
-    Get test results from pytest XML report.
 
-    Args:
-        instance_id: The instance ID being processed
-        container: Docker container instance
-
-    Returns:
-        JUnitXml test suite from pytest
-
-    Raises:
-        Exception: If pytest results cannot be retrieved
-    """
-    repository = __get_repository(instance_id)
-    archive_data, _ = container.get_archive(path=f"/{repository}/report.xml")
-
-    archive_bytes = b"".join(archive_data)
-    tar = tarfile.open(fileobj=io.BytesIO(archive_bytes))
-    xml_content = tar.extractfile(tar.getnames()[0]).read()
-
-    suite = junitparser.JUnitXml.fromstring(xml_content)
-    return suite
-
-
-def get_unittest_results(
-    instance_id: str, container: Container
+def get_test_results(
+    instance_id: str, container: Container, language
 ) -> junitparser.JUnitXml:
     """
-    Get test results from unittest XML reports in test_reports folder.
+    Get test results using the appropriate collector for the language.
 
     Args:
         instance_id: The instance ID being processed
         container: Docker container instance
+        language: The programming language (default: "python")
 
     Returns:
-        Combined JUnitXml test suite from multiple unittest XML files
+        JUnitXml test suite from the appropriate test framework
 
     Raises:
-        Exception: If unittest results cannot be retrieved
-    """
-    repository = __get_repository(instance_id)
-    archive_data, _ = container.get_archive(path=f"/{repository}/test_reports")
-
-    archive_bytes = b"".join(archive_data)
-    tar = tarfile.open(fileobj=io.BytesIO(archive_bytes))
-
-    # Create a combined test suite
-    combined_suite = junitparser.JUnitXml()
-
-    # Process each XML file in the test_reports folder
-    for member in tar.getmembers():
-        if member.name.endswith(".xml"):
-            try:
-                xml_content = tar.extractfile(member).read()
-                xml_suite = junitparser.JUnitXml.fromstring(xml_content)
-                combined_suite.add_testsuite(xml_suite)
-
-            except Exception as xml_e:
-                continue
-
-    if len(combined_suite) == 0:
-        raise RuntimeError("No valid XML files found in test_reports folder")
-
-    return combined_suite
-
-
-def get_test_results(instance_id: str, container: Container) -> junitparser.JUnitXml:
-    """
-    Get test results using pytest first, fallback to unittest if pytest fails.
-
-    Args:
-        instance_id: The instance ID being processed
-        container: Docker container instance
-
-    Returns:
-        JUnitXml test suite from either pytest or unittest
-
-    Raises:
-        RuntimeError: If both pytest and unittest methods fail
+        RuntimeError: If test results cannot be retrieved
     """
     try:
-        # Try pytest first
-        return get_pytest_results(instance_id, container)
-    except Exception as pytest_error:
-        try:
-            # Fallback to unittest
-            return get_unittest_results(instance_id, container)
-        except Exception as unittest_error:
-            # Both methods failed
-            error_msg = f"Failed to get test results for {instance_id}. "
-            error_msg += f"Pytest method failed: {pytest_error}. "
-            error_msg += f"Unittest method failed: {unittest_error}"
-            raise RuntimeError(error_msg)
+        collector = TestResultCollectorFactory.get_collector(language)
+        return collector.get_test_results(instance_id, container)
+    except Exception as e:
+        error_msg = f"Failed to get test results for {instance_id} with language {language}: {e}"
+        raise RuntimeError(error_msg)
 
 
 def run_verifier(instance_id: str, container: Container) -> Dict[str, Any]:
@@ -278,16 +212,20 @@ def get_sample_by_id(dataset, instance_id: str):
 
 def main():
     instance_id = sys.argv[1]
-    repository = sys.argv[2] if len(sys.argv) > 2 else "codeset/codeset"
+    repository = sys.argv[2]
     version = "0.0.1"
+    dataset_name = sys.argv[3] if len(sys.argv) > 3 else None
+    if not dataset_name:
+        print("Error: dataset_name is required as the third argument")
+        sys.exit(1)
 
     dataset = load_dataset("codeset/codeset-gym-python", split="train")
     sample = get_sample_by_id(dataset, instance_id)
 
-    container = start_instance(repository, instance_id, version)
+    container = start_instance(repository, instance_id, version, dataset_name)
     try:
         run_verifier(instance_id, container)
-        test_results = get_test_results(instance_id, container)
+        test_results = get_test_results(instance_id, container, "python")
         assert check_test_results(sample, test_results, previous_commit=True)["correct"]
         print("✅ Successfully processed without patch", instance_id)
 
@@ -296,7 +234,7 @@ def main():
 
         # Then run verifier and tests
         run_verifier(instance_id, container)
-        test_results = get_test_results(instance_id, container)
+        test_results = get_test_results(instance_id, container, "python")
         assert check_test_results(sample, test_results)["correct"]
         print("✅ Successfully processed with patch", instance_id)
     finally:
