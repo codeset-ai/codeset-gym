@@ -1,18 +1,26 @@
 import io
 import sys
 import json
-import docker
 import tarfile
 import junitparser
 
-from typing import Dict, Any
-from docker.models.containers import Container
+from typing import Dict, Any, Optional
 from datasets import load_dataset
 
 from .test_collectors.factory import TestResultCollectorFactory
 
 
-client = docker.from_env()
+# Lazy import docker to avoid import-time dependency
+_docker_client = None
+
+
+def _get_docker_client():
+    """Get Docker client with lazy initialization."""
+    global _docker_client
+    if _docker_client is None:
+        import docker
+        _docker_client = docker.from_env()
+    return _docker_client
 
 
 def __get_repository(instance_id: str) -> str:
@@ -21,8 +29,9 @@ def __get_repository(instance_id: str) -> str:
 
 def start_instance(
     repository: str, instance_id: str, version: str, dataset_name: str
-) -> Container:
+) -> Any:
     instance_id = instance_id.lower()
+    client = _get_docker_client()
     container = client.containers.run(
         image=f"{repository}/{dataset_name}.{instance_id}:{version}",
         command=["tail", "-f", "/dev/null"],
@@ -35,7 +44,7 @@ def start_instance(
 
 
 def get_test_results(
-    instance_id: str, container: Container, language
+    instance_id: str, container: Any, language
 ) -> junitparser.JUnitXml:
     """
     Get test results using the appropriate collector for the language.
@@ -59,7 +68,7 @@ def get_test_results(
         raise RuntimeError(error_msg)
 
 
-def run_verifier(instance_id: str, container: Container) -> Dict[str, Any]:
+def run_verifier(instance_id: str, container: Any) -> Dict[str, Any]:
     repository = __get_repository(instance_id)
     # Remove previous test results
     container.exec_run(f"rm /{repository}/report.xml")
@@ -68,12 +77,12 @@ def run_verifier(instance_id: str, container: Container) -> Dict[str, Any]:
     return {"stdout": result.output.decode(), "exit_code": result.exit_code}
 
 
-def stop_instance(container: Container):
+def stop_instance(container: Any):
     container.stop()
     container.remove()
 
 
-def apply_patch(sample: Dict[str, Any], container: Container):
+def apply_patch(sample: Dict[str, Any], container: Any):
     repository = __get_repository(sample["instance_id"])
     patch_content = sample["patch"]
     non_code_patch_content = sample["non_code_patch"]
