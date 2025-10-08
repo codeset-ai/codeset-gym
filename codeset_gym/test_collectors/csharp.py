@@ -4,28 +4,29 @@ import junitparser
 from docker.models.containers import Container
 
 from .base import TestResultCollector
+from .container_adapter import ContainerTestResultCollector
 
 
 class CSharpTestResultCollector(TestResultCollector):
-    """Test result collector for C# projects."""
+    """Test result collector for C# projects (backward compatibility wrapper)."""
+
+    def __init__(self):
+        self._adapter = ContainerTestResultCollector("csharp")
 
     def get_test_results(
         self, instance_id: str, container: Container
     ) -> junitparser.JUnitXml:
         """
-        Get test results from C# projects using dotnet test with JUnit logger.
+        Get test results using the new container adapter.
 
         Args:
             instance_id: The instance ID being processed
             container: Docker container instance
 
         Returns:
-            JUnitXml test suite from dotnet test
+            JUnitXml test suite
 
         Raises:
-            Exception: If test results cannot be retrieved
+            RuntimeError: If test results cannot be retrieved
         """
-        test_path = "TestResults"
-        return self._get_multiple_xml_from_archive(
-            instance_id, container, f"/{test_path}"
-        )
+        return self._adapter.get_test_results(instance_id, container)
