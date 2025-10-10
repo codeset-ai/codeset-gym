@@ -1,32 +1,42 @@
-from typing import Dict, Any
-
 import junitparser
-from docker.models.containers import Container
 
-from .base import TestResultCollector
-from .container_adapter import ContainerTestResultCollector
+from .core_collector import CoreTestResultCollector
 
 
-class JavaTestResultCollector(TestResultCollector):
-    """Test result collector for Java projects (backward compatibility wrapper)."""
+class JavaTestResultCollector(CoreTestResultCollector):
+    """Core test result collector for Java projects."""
 
-    def __init__(self):
-        self._adapter = ContainerTestResultCollector("java")
-
-    def get_test_results(
-        self, instance_id: str, container: Container
-    ) -> junitparser.JUnitXml:
+    def get_test_results_from_path(self, working_dir: str) -> junitparser.JUnitXml:
         """
-        Get test results using the new container adapter.
+        Get test results from Java projects, trying Maven first, then Gradle.
 
         Args:
-            instance_id: The instance ID being processed
-            container: Docker container instance
+            working_dir: Path to the working directory containing test results
 
         Returns:
-            JUnitXml test suite
+            JUnitXml test suite from either Maven or Gradle
 
         Raises:
-            RuntimeError: If test results cannot be retrieved
+            RuntimeError: If both Maven and Gradle methods fail
         """
-        return self._adapter.get_test_results(instance_id, container)
+        # Try Maven surefire reports first (specific files)
+        maven_files = [
+            "target/surefire-reports/suite.xml",
+            "target/surefire-reports/TEST-*.xml",
+            "target/surefire-reports/*.xml"
+        ]
+        
+        for pattern in maven_files:
+            if "*" in pattern:
+                maven_result = self._try_multiple_xml_pattern(working_dir, pattern)
+            else:
+                maven_result = self._try_single_xml_path(working_dir, pattern)
+            if maven_result:
+                return maven_result
+
+        # Fallback to Gradle test results
+        gradle_result = self._try_multiple_xml_pattern(working_dir, "build/test-results/test/*.xml")
+        if gradle_result:
+            return gradle_result
+
+        raise RuntimeError(f"No Maven or Gradle test results found in {working_dir}")

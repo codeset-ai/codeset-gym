@@ -1,29 +1,29 @@
 from typing import Dict, Type
 
-from .core import CoreTestResultCollector
-from .python_core import PythonCoreTestResultCollector
-from .java_core import JavaCoreTestResultCollector
-from .javascript_core import JavaScriptCoreTestResultCollector
-from .go_core import GoCoreTestResultCollector
-from .rust_core import RustCoreTestResultCollector
-from .csharp_core import CSharpCoreTestResultCollector
-from .cpp_core import CppCoreTestResultCollector
+from .core_collector import CoreTestResultCollector
+from .python import PythonTestResultCollector
+from .java import JavaTestResultCollector
+from .javascript import JavaScriptTestResultCollector
+from .go import GoTestResultCollector
+from .rust import RustTestResultCollector
+from .csharp import CSharpTestResultCollector
+from .cpp import CppTestResultCollector
 
 
 class CoreTestResultCollectorFactory:
     """Factory for creating container-agnostic test result collectors."""
 
     _collectors: Dict[str, Type[CoreTestResultCollector]] = {
-        "python": PythonCoreTestResultCollector,
-        "java": JavaCoreTestResultCollector,
-        "javascript": JavaScriptCoreTestResultCollector,
-        "typescript": JavaScriptCoreTestResultCollector,
-        "go": GoCoreTestResultCollector,
-        "rust": RustCoreTestResultCollector,
-        "csharp": CSharpCoreTestResultCollector,
-        "c": CppCoreTestResultCollector,
-        "cpp": CppCoreTestResultCollector,
-        "c++": CppCoreTestResultCollector,
+        "python": PythonTestResultCollector,
+        "java": JavaTestResultCollector,
+        "javascript": JavaScriptTestResultCollector,
+        "typescript": JavaScriptTestResultCollector,
+        "go": GoTestResultCollector,
+        "rust": RustTestResultCollector,
+        "csharp": CSharpTestResultCollector,
+        "c": CppTestResultCollector,
+        "cpp": CppTestResultCollector,
+        "c++": CppTestResultCollector,
     }
 
     @classmethod

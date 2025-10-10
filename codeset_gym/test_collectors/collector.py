@@ -2,36 +2,15 @@ import io
 import tarfile
 import tempfile
 import os
-from typing import Dict, Type
 
 import junitparser
 from docker.models.containers import Container
 
-from .core import CoreTestResultCollector
-from .python_core import PythonCoreTestResultCollector
-from .java_core import JavaCoreTestResultCollector
-from .javascript_core import JavaScriptCoreTestResultCollector
-from .go_core import GoCoreTestResultCollector
-from .rust_core import RustCoreTestResultCollector
-from .csharp_core import CSharpCoreTestResultCollector
-from .cpp_core import CppCoreTestResultCollector
+from .core_factory import CoreTestResultCollectorFactory
 
 
-class ContainerTestResultCollector:
+class TestResultCollector:
     """Adapter that wraps core test collectors to work with Docker containers."""
-
-    _core_collectors: Dict[str, Type[CoreTestResultCollector]] = {
-        "python": PythonCoreTestResultCollector,
-        "java": JavaCoreTestResultCollector,
-        "javascript": JavaScriptCoreTestResultCollector,
-        "typescript": JavaScriptCoreTestResultCollector,
-        "go": GoCoreTestResultCollector,
-        "rust": RustCoreTestResultCollector,
-        "csharp": CSharpCoreTestResultCollector,
-        "c": CppCoreTestResultCollector,
-        "cpp": CppCoreTestResultCollector,
-        "c++": CppCoreTestResultCollector,
-    }
 
     def __init__(self, language: str):
         """
@@ -44,14 +23,9 @@ class ContainerTestResultCollector:
             ValueError: If the language is not supported
         """
         language_lower = language.lower()
-        if language_lower not in self._core_collectors:
-            supported_languages = ", ".join(self._core_collectors.keys())
-            raise ValueError(
-                f"Unsupported language: {language}. Supported languages: {supported_languages}"
-            )
-
         self.language = language_lower
-        self.core_collector = self._core_collectors[language_lower]()
+        # Delegate to the core factory for parser selection
+        self.collector = CoreTestResultCollectorFactory.get_collector(language_lower)
 
     def get_test_results(self, instance_id: str, container: Container) -> junitparser.JUnitXml:
         """
@@ -84,7 +58,7 @@ class ContainerTestResultCollector:
                 extracted_path = os.path.join(temp_dir, repository)
 
                 # Use the core collector to parse the results
-                return self.core_collector.get_test_results_from_path(extracted_path)
+                return self.collector.get_test_results_from_path(extracted_path)
 
             except Exception as e:
                 raise RuntimeError(f"Failed to extract and parse test results for {instance_id}: {e}")
@@ -96,4 +70,4 @@ class ContainerTestResultCollector:
     @classmethod
     def get_supported_languages(cls) -> list[str]:
         """Get list of supported languages."""
-        return list(cls._core_collectors.keys())
+        return CoreTestResultCollectorFactory.get_supported_languages()

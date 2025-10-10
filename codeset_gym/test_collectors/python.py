@@ -1,32 +1,32 @@
-from typing import Dict, Any
-
 import junitparser
-from docker.models.containers import Container
 
-from .base import TestResultCollector
-from .container_adapter import ContainerTestResultCollector
+from .core_collector import CoreTestResultCollector
 
 
-class PythonTestResultCollector(TestResultCollector):
-    """Test result collector for Python projects (backward compatibility wrapper)."""
+class PythonTestResultCollector(CoreTestResultCollector):
+    """Core test result collector for Python projects."""
 
-    def __init__(self):
-        self._adapter = ContainerTestResultCollector("python")
-
-    def get_test_results(
-        self, instance_id: str, container: Container
-    ) -> junitparser.JUnitXml:
+    def get_test_results_from_path(self, working_dir: str) -> junitparser.JUnitXml:
         """
-        Get test results using the new container adapter.
+        Get test results using pytest first, fallback to unittest if pytest fails.
 
         Args:
-            instance_id: The instance ID being processed
-            container: Docker container instance
+            working_dir: Path to the working directory containing test results
 
         Returns:
-            JUnitXml test suite
+            JUnitXml test suite from either pytest or unittest
 
         Raises:
-            RuntimeError: If test results cannot be retrieved
+            RuntimeError: If both pytest and unittest methods fail
         """
-        return self._adapter.get_test_results(instance_id, container)
+        # Try pytest first (report.xml)
+        pytest_result = self._try_single_xml_path(working_dir, "report.xml")
+        if pytest_result:
+            return pytest_result
+
+        # Fallback to unittest (test_reports folder)
+        unittest_result = self._try_multiple_xml_pattern(working_dir, "test_reports/*.xml")
+        if unittest_result:
+            return unittest_result
+
+        raise RuntimeError(f"No test results found in {working_dir}")

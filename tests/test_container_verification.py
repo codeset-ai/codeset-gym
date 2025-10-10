@@ -7,7 +7,6 @@ from codeset_gym.main import (
     run_verifier,
     get_test_results,
     stop_instance,
-    __get_repository,
 )
 
 

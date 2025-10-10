@@ -1,32 +1,37 @@
-from typing import Dict, Any
-
 import junitparser
-from docker.models.containers import Container
 
-from .base import TestResultCollector
-from .container_adapter import ContainerTestResultCollector
+from .core_collector import CoreTestResultCollector
 
 
-class CSharpTestResultCollector(TestResultCollector):
-    """Test result collector for C# projects (backward compatibility wrapper)."""
+class CSharpTestResultCollector(CoreTestResultCollector):
+    """Core test result collector for C# projects."""
 
-    def __init__(self):
-        self._adapter = ContainerTestResultCollector("csharp")
-
-    def get_test_results(
-        self, instance_id: str, container: Container
-    ) -> junitparser.JUnitXml:
+    def get_test_results_from_path(self, working_dir: str) -> junitparser.JUnitXml:
         """
-        Get test results using the new container adapter.
+        Get test results from C# projects.
 
         Args:
-            instance_id: The instance ID being processed
-            container: Docker container instance
+            working_dir: Path to the working directory containing test results
 
         Returns:
-            JUnitXml test suite
+            JUnitXml test suite from .NET test
 
         Raises:
-            RuntimeError: If test results cannot be retrieved
+            RuntimeError: If test results are not found
         """
-        return self._adapter.get_test_results(instance_id, container)
+        # Try standard .NET test output (specific files first)
+        dotnet_files = [
+            "TestResults/results.xml",
+            "TestResults/*.xml",
+            "test-results.xml"
+        ]
+        
+        for pattern in dotnet_files:
+            if "*" in pattern:
+                dotnet_result = self._try_multiple_xml_pattern(working_dir, pattern)
+            else:
+                dotnet_result = self._try_single_xml_path(working_dir, pattern)
+            if dotnet_result:
+                return dotnet_result
+
+        raise RuntimeError(f"No .NET test results found in {working_dir}")

@@ -1,33 +1,17 @@
-from typing import Dict, Type
+from typing import Dict
 
-from .base import TestResultCollector
-from .python import PythonTestResultCollector
-from .java import JavaTestResultCollector
-from .javascript import JavaScriptTestResultCollector
-from .go import GoTestResultCollector
-from .rust import RustTestResultCollector
-from .csharp import CSharpTestResultCollector
-from .cpp import CppTestResultCollector
+from .collector import TestResultCollector
 
 
 class TestResultCollectorFactory:
     """Factory for creating test result collectors based on language."""
 
-    _collectors: Dict[str, Type[TestResultCollector]] = {
-        "python": PythonTestResultCollector,
-        "java": JavaTestResultCollector,
-        "javascript": JavaScriptTestResultCollector,
-        "typescript": JavaScriptTestResultCollector,
-        "go": GoTestResultCollector,
-        "rust": RustTestResultCollector,
-        "csharp": CSharpTestResultCollector,
-        "c": CppTestResultCollector,
-        "cpp": CppTestResultCollector,
-        "c++": CppTestResultCollector,
-    }
+    _collectors: Dict[str, type] = {lang: TestResultCollector for lang in [
+        "python", "java", "javascript", "typescript", "go", "rust", "csharp", "c", "cpp", "c++"
+    ]}
 
     @classmethod
-    def get_collector(cls, language: str) -> TestResultCollector:
+    def get_collector(cls, language: str):
         """
         Get a test result collector for the specified language.
 
@@ -49,7 +33,7 @@ class TestResultCollectorFactory:
             )
 
         collector_class = cls._collectors[language_lower]
-        return collector_class()
+        return collector_class(language_lower)
 
     @classmethod
     def get_supported_languages(cls) -> list[str]:

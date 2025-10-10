@@ -1,32 +1,37 @@
-from typing import Dict, Any
-
 import junitparser
-from docker.models.containers import Container
 
-from .base import TestResultCollector
-from .container_adapter import ContainerTestResultCollector
+from .core_collector import CoreTestResultCollector
 
 
-class JavaScriptTestResultCollector(TestResultCollector):
-    """Test result collector for JavaScript/TypeScript projects (backward compatibility wrapper)."""
+class JavaScriptTestResultCollector(CoreTestResultCollector):
+    """Core test result collector for JavaScript/TypeScript projects."""
 
-    def __init__(self):
-        self._adapter = ContainerTestResultCollector("javascript")
-
-    def get_test_results(
-        self, instance_id: str, container: Container
-    ) -> junitparser.JUnitXml:
+    def get_test_results_from_path(self, working_dir: str) -> junitparser.JUnitXml:
         """
-        Get test results using the new container adapter.
+        Get test results from JavaScript projects, trying Jest, Mocha, then Vitest.
 
         Args:
-            instance_id: The instance ID being processed
-            container: Docker container instance
+            working_dir: Path to the working directory containing test results
 
         Returns:
-            JUnitXml test suite
+            JUnitXml test suite from Jest, Mocha, or Vitest
 
         Raises:
-            RuntimeError: If test results cannot be retrieved
+            RuntimeError: If all test frameworks fail
         """
-        return self._adapter.get_test_results(instance_id, container)
+        # Try Jest first
+        jest_result = self._try_single_xml_path(working_dir, "test-results/junit.xml")
+        if jest_result:
+            return jest_result
+
+        # Try Mocha
+        mocha_result = self._try_single_xml_path(working_dir, "test-results/test-results.xml")
+        if mocha_result:
+            return mocha_result
+
+        # Try Vitest (same path as Jest but might be different content)
+        vitest_result = self._try_single_xml_path(working_dir, "test-results/junit.xml")
+        if vitest_result:
+            return vitest_result
+
+        raise RuntimeError(f"No Jest, Mocha, or Vitest test results found in {working_dir}")

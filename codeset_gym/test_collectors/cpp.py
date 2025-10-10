@@ -1,32 +1,37 @@
-from typing import Dict, Any
-
 import junitparser
-from docker.models.containers import Container
 
-from .base import TestResultCollector
-from .container_adapter import ContainerTestResultCollector
+from .core_collector import CoreTestResultCollector
 
 
-class CppTestResultCollector(TestResultCollector):
-    """Test result collector for C/C++ projects (backward compatibility wrapper)."""
+class CppTestResultCollector(CoreTestResultCollector):
+    """Core test result collector for C++ projects."""
 
-    def __init__(self):
-        self._adapter = ContainerTestResultCollector("cpp")
-
-    def get_test_results(
-        self, instance_id: str, container: Container
-    ) -> junitparser.JUnitXml:
+    def get_test_results_from_path(self, working_dir: str) -> junitparser.JUnitXml:
         """
-        Get test results using the new container adapter.
+        Get test results from C++ projects.
 
         Args:
-            instance_id: The instance ID being processed
-            container: Docker container instance
+            working_dir: Path to the working directory containing test results
 
         Returns:
-            JUnitXml test suite
+            JUnitXml test suite from C++ test frameworks
 
         Raises:
-            RuntimeError: If test results cannot be retrieved
+            RuntimeError: If test results are not found
         """
-        return self._adapter.get_test_results(instance_id, container)
+        # Try Google Test output
+        gtest_result = self._try_single_xml_path(working_dir, "gtest_output.xml")
+        if gtest_result:
+            return gtest_result
+
+        # Try Catch2 output
+        catch2_result = self._try_single_xml_path(working_dir, "test-results.xml")
+        if catch2_result:
+            return catch2_result
+
+        # Try CTest output
+        ctest_result = self._try_multiple_xml_pattern(working_dir, "Testing/*/Test.xml")
+        if ctest_result:
+            return ctest_result
+
+        raise RuntimeError(f"No C++ test results found in {working_dir}")
