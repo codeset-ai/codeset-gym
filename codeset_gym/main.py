@@ -4,7 +4,7 @@ import json
 import tarfile
 import junitparser
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from datasets import load_dataset
 
 from .test_collectors.factory import TestResultCollectorFactory
@@ -27,13 +27,10 @@ def __get_repository(instance_id: str) -> str:
     return instance_id.rsplit("-", 1)[0].split("__")[1]
 
 
-def start_instance(
-    repository: str, instance_id: str, version: str, dataset_name: str
-) -> Any:
-    instance_id = instance_id.lower()
+def start_instance(image_name: str) -> Any:
     client = _get_docker_client()
     container = client.containers.run(
-        image=f"{repository}/{dataset_name}.{instance_id}:{version}",
+        image=image_name,
         command=["tail", "-f", "/dev/null"],
         detach=True,
         stdin_open=True,
@@ -106,7 +103,7 @@ def apply_patch(sample: Dict[str, Any], container: Any):
             tar.addfile(info, io.BytesIO(patch_bytes))
 
         patch_tar.seek(0)
-        container.put_archive(path=f"/tmp", data=patch_tar.getvalue())
+        container.put_archive(path="/tmp", data=patch_tar.getvalue())
 
         result = container.exec_run(
             f"git apply /tmp/{patch[1]}.diff", workdir=f"/{repository}"
@@ -220,18 +217,19 @@ def get_sample_by_id(dataset, instance_id: str):
 
 
 def main():
-    instance_id = sys.argv[1]
-    repository = sys.argv[2]
-    version = "0.0.1"
-    dataset_name = sys.argv[3] if len(sys.argv) > 3 else None
-    if not dataset_name:
-        print("Error: dataset_name is required as the third argument")
+    if len(sys.argv) != 4:
+        print("Usage: python -m codeset_gym <huggingface_dataset> <instance_id> <image_name>")
+        print("Example: python -m codeset_gym codeset/codeset-gym-python-new matiasb__python-unidiff-19 europe-west10-docker.pkg.dev/decoded-bulwark-461711-b2/codeset/codeset-platform.codeset-gym-python.matiasb__python-unidiff-19:latest")
         sys.exit(1)
+    
+    huggingface_dataset = sys.argv[1]
+    instance_id = sys.argv[2]
+    image_name = sys.argv[3]
 
-    dataset = load_dataset("codeset/codeset-gym-python", split="train")
+    dataset = load_dataset(huggingface_dataset, split="train")
     sample = get_sample_by_id(dataset, instance_id)
 
-    container = start_instance(repository, instance_id, version, dataset_name)
+    container = start_instance(image_name)
     try:
         run_verifier(instance_id, container)
         test_results = get_test_results(instance_id, container, "python")

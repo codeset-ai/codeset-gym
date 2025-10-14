@@ -28,7 +28,7 @@ class CoreTestResultCollector(ABC):
     def _find_xml_files(self, base_path: str, pattern: str) -> List[str]:
         """Find XML files matching a pattern in the base path."""
         search_pattern = os.path.join(base_path, pattern)
-        return glob.glob(search_pattern)
+        return glob.glob(search_pattern, include_hidden=True, recursive=True)
 
     def _load_single_xml_file(self, xml_path: str) -> junitparser.JUnitXml:
         """Load a single XML file."""
@@ -47,7 +47,9 @@ class CoreTestResultCollector(ABC):
             try:
                 xml_suite = junitparser.JUnitXml.fromfile(xml_path)
                 combined_suite.add_testsuite(xml_suite)
-            except Exception:
+            except Exception as e:
+                print(f"Error loading XML file: {xml_path}")
+                print(e)
                 continue
 
         if len(combined_suite) == 0:
@@ -68,5 +70,6 @@ class CoreTestResultCollector(ABC):
         try:
             xml_files = self._find_xml_files(working_dir, pattern)
             return self._load_multiple_xml_files(xml_files)
-        except Exception:
+        except Exception as e:
+            print(e)
             return None

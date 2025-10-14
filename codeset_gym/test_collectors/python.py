@@ -29,4 +29,9 @@ class PythonTestResultCollector(CoreTestResultCollector):
         if unittest_result:
             return unittest_result
 
+        # # Fallback to any xml file
+        # any_xml_result = self._try_multiple_xml_pattern(working_dir, "**/*.xml")
+        # if any_xml_result:
+        #     return any_xml_result
+
         raise RuntimeError(f"No test results found in {working_dir}")

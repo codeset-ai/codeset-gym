@@ -12,7 +12,13 @@ uv sync
 
 ```bash
 docker login -u <USER> -p <PASSWORD> <REPOSITORY>
-python -m codeset_gym <instance_id> <repository> <dataset>
+python -m codeset_gym <huggingface_dataset> <instance_id> <image_name>
+```
+
+### Example
+
+```bash
+python -m codeset_gym codeset/codeset-gym-python-new matiasb__python-unidiff-19 europe-west10-docker.pkg.dev/decoded-bulwark-461711-b2/codeset/codeset-platform.codeset-gym-python.matiasb__python-unidiff-19:latest
 ```
 
 ## Build and Publich
