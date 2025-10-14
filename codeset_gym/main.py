@@ -19,7 +19,7 @@ def _get_docker_client():
     global _docker_client
     if _docker_client is None:
         import docker
-        _docker_client = docker.from_env()
+        _docker_client = docker.from_env(timeout=600)
     return _docker_client
 
 
