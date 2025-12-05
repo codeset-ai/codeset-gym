@@ -1,26 +1,36 @@
 import io
 import sys
 import json
-import docker
 import tarfile
 import junitparser
 
 from typing import Dict, Any
-from docker.models.containers import Container
 from datasets import load_dataset
 
+from .test_collectors.factory import ContainerTestResultCollectorFactory
 
-client = docker.from_env()
+
+# Lazy import docker to avoid import-time dependency
+_docker_client = None
+
+
+def _get_docker_client():
+    """Get Docker client with lazy initialization."""
+    global _docker_client
+    if _docker_client is None:
+        import docker
+        _docker_client = docker.from_env(timeout=600)
+    return _docker_client
 
 
 def __get_repository(instance_id: str) -> str:
     return instance_id.rsplit("-", 1)[0].split("__")[1]
 
 
-def start_instance(repository: str, instance_id: str, version: str) -> Container:
-    instance_id = instance_id.lower()
+def start_instance(image_name: str) -> Any:
+    client = _get_docker_client()
     container = client.containers.run(
-        image=f"{repository}/codeset-gym-python.{instance_id}:{version}",
+        image=image_name,
         command=["tail", "-f", "/dev/null"],
         detach=True,
         stdin_open=True,
@@ -29,103 +39,33 @@ def start_instance(repository: str, instance_id: str, version: str) -> Container
     return container
 
 
-def get_pytest_results(instance_id: str, container: Container) -> junitparser.JUnitXml:
-    """
-    Get test results from pytest XML report.
 
-    Args:
-        instance_id: The instance ID being processed
-        container: Docker container instance
-
-    Returns:
-        JUnitXml test suite from pytest
-
-    Raises:
-        Exception: If pytest results cannot be retrieved
-    """
-    repository = __get_repository(instance_id)
-    archive_data, _ = container.get_archive(path=f"/{repository}/report.xml")
-
-    archive_bytes = b"".join(archive_data)
-    tar = tarfile.open(fileobj=io.BytesIO(archive_bytes))
-    xml_content = tar.extractfile(tar.getnames()[0]).read()
-
-    suite = junitparser.JUnitXml.fromstring(xml_content)
-    return suite
-
-
-def get_unittest_results(
-    instance_id: str, container: Container
+def get_test_results(
+    instance_id: str, container: Any, language
 ) -> junitparser.JUnitXml:
     """
-    Get test results from unittest XML reports in test_reports folder.
+    Get test results using the appropriate collector for the language.
 
     Args:
         instance_id: The instance ID being processed
         container: Docker container instance
+        language: The programming language (default: "python")
 
     Returns:
-        Combined JUnitXml test suite from multiple unittest XML files
+        JUnitXml test suite from the appropriate test framework
 
     Raises:
-        Exception: If unittest results cannot be retrieved
-    """
-    repository = __get_repository(instance_id)
-    archive_data, _ = container.get_archive(path=f"/{repository}/test_reports")
-
-    archive_bytes = b"".join(archive_data)
-    tar = tarfile.open(fileobj=io.BytesIO(archive_bytes))
-
-    # Create a combined test suite
-    combined_suite = junitparser.JUnitXml()
-
-    # Process each XML file in the test_reports folder
-    for member in tar.getmembers():
-        if member.name.endswith(".xml"):
-            try:
-                xml_content = tar.extractfile(member).read()
-                xml_suite = junitparser.JUnitXml.fromstring(xml_content)
-                combined_suite.add_testsuite(xml_suite)
-
-            except Exception as xml_e:
-                continue
-
-    if len(combined_suite) == 0:
-        raise RuntimeError("No valid XML files found in test_reports folder")
-
-    return combined_suite
-
-
-def get_test_results(instance_id: str, container: Container) -> junitparser.JUnitXml:
-    """
-    Get test results using pytest first, fallback to unittest if pytest fails.
-
-    Args:
-        instance_id: The instance ID being processed
-        container: Docker container instance
-
-    Returns:
-        JUnitXml test suite from either pytest or unittest
-
-    Raises:
-        RuntimeError: If both pytest and unittest methods fail
+        RuntimeError: If test results cannot be retrieved
     """
     try:
-        # Try pytest first
-        return get_pytest_results(instance_id, container)
-    except Exception as pytest_error:
-        try:
-            # Fallback to unittest
-            return get_unittest_results(instance_id, container)
-        except Exception as unittest_error:
-            # Both methods failed
-            error_msg = f"Failed to get test results for {instance_id}. "
-            error_msg += f"Pytest method failed: {pytest_error}. "
-            error_msg += f"Unittest method failed: {unittest_error}"
-            raise RuntimeError(error_msg)
+        collector = ContainerTestResultCollectorFactory.get_collector(language)
+        return collector.get_test_results(instance_id, container)
+    except Exception as e:
+        error_msg = f"Failed to get test results for {instance_id} with language {language}: {e}"
+        raise RuntimeError(error_msg)
 
 
-def run_verifier(instance_id: str, container: Container) -> Dict[str, Any]:
+def run_verifier(instance_id: str, container: Any) -> Dict[str, Any]:
     repository = __get_repository(instance_id)
     # Remove previous test results
     container.exec_run(f"rm /{repository}/report.xml")
@@ -134,12 +74,12 @@ def run_verifier(instance_id: str, container: Container) -> Dict[str, Any]:
     return {"stdout": result.output.decode(), "exit_code": result.exit_code}
 
 
-def stop_instance(container: Container):
+def stop_instance(container: Any):
     container.stop()
     container.remove()
 
 
-def apply_patch(sample: Dict[str, Any], container: Container):
+def apply_patch(sample: Dict[str, Any], container: Any):
     repository = __get_repository(sample["instance_id"])
     patch_content = sample["patch"]
     non_code_patch_content = sample["non_code_patch"]
@@ -163,7 +103,7 @@ def apply_patch(sample: Dict[str, Any], container: Container):
             tar.addfile(info, io.BytesIO(patch_bytes))
 
         patch_tar.seek(0)
-        container.put_archive(path=f"/tmp", data=patch_tar.getvalue())
+        container.put_archive(path="/tmp", data=patch_tar.getvalue())
 
         result = container.exec_run(
             f"git apply /tmp/{patch[1]}.diff", workdir=f"/{repository}"
@@ -173,6 +113,17 @@ def apply_patch(sample: Dict[str, Any], container: Container):
             return {"stdout": stdout, "exit_code": result.exit_code}
 
     return {"stdout": stdout, "exit_code": 0}
+
+
+def compute_test_name(test_case: junitparser.TestCase) -> str:
+    if test_case.classname and test_case.name:
+        return f"{test_case.classname}::{test_case.name}"
+    elif test_case.classname:
+        return test_case.classname
+    elif test_case.name:
+        return test_case.name
+    else:
+        raise ValueError(f"Test case has no classname or name: {test_case}")
 
 
 def check_test_results(
@@ -194,7 +145,7 @@ def check_test_results(
 
         for test_case in test_results:
             if hasattr(test_case, "result"):
-                test_name = f"{test_case.classname}::{test_case.name}"
+                test_name = compute_test_name(test_case)
                 if test_case.is_skipped:
                     actual_skipped.add(test_name)
                 elif test_case.result:
@@ -203,7 +154,7 @@ def check_test_results(
                     actual_passes.add(test_name)
             else:
                 for sub_test in test_case:
-                    test_name = f"{sub_test.classname}::{sub_test.name}"
+                    test_name = compute_test_name(sub_test)
                     if sub_test.is_skipped:
                         actual_skipped.add(test_name)
                     elif sub_test.result:
@@ -234,24 +185,24 @@ def check_test_results(
         for test_case in test_results:
             if hasattr(test_case, "result"):
                 if test_case.is_skipped:
-                    test_name = f"{test_case.classname}::{test_case.name}"
+                    test_name = compute_test_name(test_case)
                     actual_skipped.add(test_name)
                 elif test_case.result:
-                    test_name = f"{test_case.classname}::{test_case.name}"
+                    test_name = compute_test_name(test_case)
                     actual_failures.add(test_name)
                 else:
-                    test_name = f"{test_case.classname}::{test_case.name}"
+                    test_name = compute_test_name(test_case)
                     actual_passes.add(test_name)
             else:
                 for sub_test in test_case:
                     if sub_test.is_skipped:
-                        test_name = f"{sub_test.classname}::{sub_test.name}"
+                        test_name = compute_test_name(sub_test)
                         actual_skipped.add(test_name)
                     elif sub_test.result:
-                        test_name = f"{sub_test.classname}::{sub_test.name}"
+                        test_name = compute_test_name(sub_test)
                         actual_failures.add(test_name)
                     else:
-                        test_name = f"{sub_test.classname}::{sub_test.name}"
+                        test_name = compute_test_name(sub_test)
                         actual_passes.add(test_name)
 
         expected_passes_correct = expected_passes == actual_passes
@@ -277,17 +228,22 @@ def get_sample_by_id(dataset, instance_id: str):
 
 
 def main():
-    instance_id = sys.argv[1]
-    repository = sys.argv[2] if len(sys.argv) > 2 else "codeset/codeset"
-    version = "0.0.1"
+    if len(sys.argv) != 4:
+        print("Usage: python -m codeset_gym <huggingface_dataset> <instance_id> <image_name>")
+        print("Example: python -m codeset_gym codeset/codeset-gym-python-new matiasb__python-unidiff-19 europe-west10-docker.pkg.dev/decoded-bulwark-461711-b2/codeset/codeset-platform.codeset-gym-python.matiasb__python-unidiff-19:latest")
+        sys.exit(1)
+    
+    huggingface_dataset = sys.argv[1]
+    instance_id = sys.argv[2]
+    image_name = sys.argv[3]
 
-    dataset = load_dataset("codeset/codeset-gym-python", split="train")
+    dataset = load_dataset(huggingface_dataset, split="train")
     sample = get_sample_by_id(dataset, instance_id)
 
-    container = start_instance(repository, instance_id, version)
+    container = start_instance(image_name)
     try:
         run_verifier(instance_id, container)
-        test_results = get_test_results(instance_id, container)
+        test_results = get_test_results(instance_id, container, "python")
         assert check_test_results(sample, test_results, previous_commit=True)["correct"]
         print("✅ Successfully processed without patch", instance_id)
 
@@ -296,7 +252,7 @@ def main():
 
         # Then run verifier and tests
         run_verifier(instance_id, container)
-        test_results = get_test_results(instance_id, container)
+        test_results = get_test_results(instance_id, container, "python")
         assert check_test_results(sample, test_results)["correct"]
         print("✅ Successfully processed with patch", instance_id)
     finally:

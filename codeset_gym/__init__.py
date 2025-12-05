@@ -5,8 +5,6 @@ __version__ = "0.0.1"
 from .main import (
     main,
     start_instance,
-    get_pytest_results,
-    get_unittest_results,
     get_test_results,
     run_verifier,
     stop_instance,
@@ -18,8 +16,6 @@ from .main import (
 __all__ = [
     "main",
     "start_instance",
-    "get_pytest_results",
-    "get_unittest_results",
     "get_test_results",
     "run_verifier",
     "stop_instance",
