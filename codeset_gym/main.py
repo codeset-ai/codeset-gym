@@ -115,6 +115,17 @@ def apply_patch(sample: Dict[str, Any], container: Any):
     return {"stdout": stdout, "exit_code": 0}
 
 
+def compute_test_name(test_case: junitparser.TestCase) -> str:
+    if test_case.classname and test_case.name:
+        return f"{test_case.classname}::{test_case.name}"
+    elif test_case.classname:
+        return test_case.classname
+    elif test_case.name:
+        return test_case.name
+    else:
+        raise ValueError(f"Test case has no classname or name: {test_case}")
+
+
 def check_test_results(
     sample: Dict[str, Any],
     test_results: junitparser.JUnitXml,
@@ -134,7 +145,7 @@ def check_test_results(
 
         for test_case in test_results:
             if hasattr(test_case, "result"):
-                test_name = f"{test_case.classname}::{test_case.name}"
+                test_name = compute_test_name(test_case)
                 if test_case.is_skipped:
                     actual_skipped.add(test_name)
                 elif test_case.result:
@@ -143,7 +154,7 @@ def check_test_results(
                     actual_passes.add(test_name)
             else:
                 for sub_test in test_case:
-                    test_name = f"{sub_test.classname}::{sub_test.name}"
+                    test_name = compute_test_name(sub_test)
                     if sub_test.is_skipped:
                         actual_skipped.add(test_name)
                     elif sub_test.result:
@@ -174,24 +185,24 @@ def check_test_results(
         for test_case in test_results:
             if hasattr(test_case, "result"):
                 if test_case.is_skipped:
-                    test_name = f"{test_case.classname}::{test_case.name}"
+                    test_name = compute_test_name(test_case)
                     actual_skipped.add(test_name)
                 elif test_case.result:
-                    test_name = f"{test_case.classname}::{test_case.name}"
+                    test_name = compute_test_name(test_case)
                     actual_failures.add(test_name)
                 else:
-                    test_name = f"{test_case.classname}::{test_case.name}"
+                    test_name = compute_test_name(test_case)
                     actual_passes.add(test_name)
             else:
                 for sub_test in test_case:
                     if sub_test.is_skipped:
-                        test_name = f"{sub_test.classname}::{sub_test.name}"
+                        test_name = compute_test_name(sub_test)
                         actual_skipped.add(test_name)
                     elif sub_test.result:
-                        test_name = f"{sub_test.classname}::{sub_test.name}"
+                        test_name = compute_test_name(sub_test)
                         actual_failures.add(test_name)
                     else:
-                        test_name = f"{sub_test.classname}::{sub_test.name}"
+                        test_name = compute_test_name(sub_test)
                         actual_passes.add(test_name)
 
         expected_passes_correct = expected_passes == actual_passes
