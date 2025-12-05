@@ -40,7 +40,7 @@ def test_core_collector_reads_local_results(language: str, relative_path: str):
 
         assert results is not None
         assert len(results) > 0
-        total_tests = sum(len(suite) for suite in results)
+        total_tests = sum(1 for _ in results)
         assert total_tests == 1
 
 
