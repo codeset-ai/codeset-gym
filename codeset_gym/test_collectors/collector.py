@@ -9,7 +9,7 @@ from docker.models.containers import Container
 from .core_factory import CoreTestResultCollectorFactory
 
 
-class TestResultCollector:
+class ContainerTestResultCollector:
     """Adapter that wraps core test collectors to work with Docker containers."""
 
     def __init__(self, language: str):

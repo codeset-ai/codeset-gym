@@ -1,25 +1,25 @@
 from typing import Dict
 
-from .collector import TestResultCollector
+from .collector import ContainerTestResultCollector
 
 
-class TestResultCollectorFactory:
-    """Factory for creating test result collectors based on language."""
+class ContainerTestResultCollectorFactory:
+    """Factory for creating container test result collectors based on language."""
 
-    _collectors: Dict[str, type] = {lang: TestResultCollector for lang in [
+    _collectors: Dict[str, type] = {lang: ContainerTestResultCollector for lang in [
         "python", "java", "javascript", "typescript", "go", "rust", "csharp", "c", "cpp", "c++"
     ]}
 
     @classmethod
     def get_collector(cls, language: str):
         """
-        Get a test result collector for the specified language.
+        Get a container test result collector for the specified language.
 
         Args:
             language: The programming language (e.g., 'python', 'java', 'javascript')
 
         Returns:
-            TestResultCollector instance for the language
+            ContainerTestResultCollector instance for the language
 
         Raises:
             ValueError: If the language is not supported

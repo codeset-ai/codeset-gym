@@ -7,7 +7,7 @@ import junitparser
 from typing import Dict, Any
 from datasets import load_dataset
 
-from .test_collectors.factory import TestResultCollectorFactory
+from .test_collectors.factory import ContainerTestResultCollectorFactory
 
 
 # Lazy import docker to avoid import-time dependency
@@ -58,7 +58,7 @@ def get_test_results(
         RuntimeError: If test results cannot be retrieved
     """
     try:
-        collector = TestResultCollectorFactory.get_collector(language)
+        collector = ContainerTestResultCollectorFactory.get_collector(language)
         return collector.get_test_results(instance_id, container)
     except Exception as e:
         error_msg = f"Failed to get test results for {instance_id} with language {language}: {e}"
